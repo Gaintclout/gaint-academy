@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.auth import current_user,permission_codes
 from app.db.session import get_db
-from app.models.identity import User
+from app.models.identity import User,AuditEvent
 from app.models.academics import Section,Enrollment
 from app.models.learning import Course,Assignment,Assessment,AssessmentMark,Submission
 router=APIRouter(tags=["learning"])
@@ -60,4 +60,5 @@ def submit_assignment(assignment_id:UUID,p:SubmissionIn,u:User=Depends(current_u
 def publish(assessment_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_db)):
  req(db,u,"assessment.publish");a=db.scalar(select(Assessment).where(Assessment.id==assessment_id,Assessment.tenant_id==u.tenant_id))
  if not a:raise HTTPException(404,"Assessment not found")
- a.status="PUBLISHED";db.query(AssessmentMark).filter(AssessmentMark.tenant_id==u.tenant_id,AssessmentMark.assessment_id==a.id).update({"status":"PUBLISHED"});db.commit();return {"data":{"id":str(a.id),"status":a.status}}
+ if a.status!="DRAFT":raise HTTPException(409,"Assessment is not in DRAFT state")
+ a.status="PUBLISHED";db.query(AssessmentMark).filter(AssessmentMark.tenant_id==u.tenant_id,AssessmentMark.assessment_id==a.id).update({"status":"PUBLISHED"});db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="assessment.published",resource_type="assessment",resource_id=str(a.id)));db.commit();return {"data":{"id":str(a.id),"status":a.status}}
