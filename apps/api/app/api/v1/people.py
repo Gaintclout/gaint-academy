@@ -21,6 +21,12 @@ def add_guardian(student_id:UUID,p:GuardianIn,user:User=Depends(current_user),db
     if not guardian: guardian=Guardian(tenant_id=user.tenant_id,name=p.name,phone=p.phone,email=p.email);db.add(guardian);db.flush()
     link=StudentGuardian(tenant_id=user.tenant_id,student_id=student.id,guardian_id=guardian.id,relationship=p.relationship,is_primary=p.is_primary);db.add(link);db.commit()
     return {"data":{"guardian_id":str(guardian.id),"relationship":link.relationship}}
+class GuardianUserLinkIn(BaseModel):user_id:UUID
+@router.put("/guardians/{guardian_id}/user-link")
+def link_guardian_user(guardian_id:UUID,p:GuardianUserLinkIn,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require(db,user,"students.student.create");guardian=db.scalar(select(Guardian).where(Guardian.id==guardian_id,Guardian.tenant_id==user.tenant_id));target=db.scalar(select(User).where(User.id==p.user_id,User.tenant_id==user.tenant_id,User.is_active.is_(True)))
+    if not guardian or not target:raise HTTPException(404,"Guardian or user not found")
+    guardian.user_id=target.id;db.commit();return {"data":{"guardian_id":str(guardian.id),"user_id":str(target.id)}}
 class StaffIn(BaseModel): employee_no:str; name:str; email:EmailStr|None=None; designation:str|None=None
 @router.get("/staff")
 def staff_list(user:User=Depends(current_user),db:Session=Depends(get_db)):
