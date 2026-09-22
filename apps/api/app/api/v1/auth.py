@@ -4,19 +4,21 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 from app.db.session import get_db
-from app.models.identity import User, Session, AuditEvent, now
+from app.models.identity import User, Session, AuditEvent, Tenant, now
 from app.core.security import verify_password
 from app.core.auth import SESSION_COOKIE, current_user, new_session_token, permission_codes, token_hash
 from app.core.config import settings
 
 router=APIRouter(prefix="/auth",tags=["auth"])
 class LoginIn(BaseModel):
+    institution_code: str
     email: EmailStr
     password: str
 
 @router.post("/login")
 def login(payload:LoginIn,request:Request,response:Response,db:DbSession=Depends(get_db)):
-    user=db.scalar(select(User).where(User.email==payload.email.lower(),User.is_active.is_(True)))
+    tenant=db.scalar(select(Tenant).where(Tenant.code==payload.institution_code.strip().upper(),Tenant.status=="ACTIVE"))
+    user=None if not tenant else db.scalar(select(User).where(User.tenant_id==tenant.id,User.email==payload.email.lower(),User.is_active.is_(True)))
     if not user or not verify_password(payload.password,user.password_hash):
         raise HTTPException(status_code=401,detail="Invalid credentials")
     raw,digest=new_session_token()
