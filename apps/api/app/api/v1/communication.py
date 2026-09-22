@@ -14,7 +14,7 @@ def req(db,u,p):
 class NoticeIn(BaseModel):title:str;body:str;audience:str="ALL"
 @router.post("/notices",status_code=201)
 def create_notice(p:NoticeIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
- req(db,u,"communication.notice.manage");x=Notice(tenant_id=u.tenant_id,created_by=u.id,**p.model_dump());db.add(x);db.commit();db.refresh(x);return {"data":{"id":str(x.id),"status":x.status}}
+ req(db,u,"communication.notice.manage");x=Notice(tenant_id=u.tenant_id,created_by=u.id,**p.model_dump());db.add(x);db.commit();db.refresh(x);return {"data":{"id":str(x.id),"status":x.status,"notifications_created":len(recipients)}}
 @router.get("/notices")
 def notices(u:User=Depends(current_user),db:Session=Depends(get_db)):
  req(db,u,"communication.notice.view")
@@ -24,7 +24,10 @@ def publish(notice_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_d
  req(db,u,"communication.notice.publish");x=db.scalar(select(Notice).where(Notice.id==notice_id,Notice.tenant_id==u.tenant_id))
  if not x:raise HTTPException(404,"Notice not found")
  if x.status!="DRAFT":raise HTTPException(409,"Notice is not in DRAFT state")
- x.status="PUBLISHED";x.published_at=datetime.now(timezone.utc);db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="notice.published",resource_type="notice",resource_id=str(x.id)));db.commit();return {"data":{"id":str(x.id),"status":x.status}}
+ x.status="PUBLISHED";x.published_at=datetime.now(timezone.utc)
+ recipients=db.scalars(select(User).where(User.tenant_id==u.tenant_id,User.is_active.is_(True))).all()
+ for recipient in recipients:db.add(Notification(tenant_id=u.tenant_id,user_id=recipient.id,title=x.title,body=x.body))
+ db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="notice.published",resource_type="notice",resource_id=str(x.id)));db.commit();return {"data":{"id":str(x.id),"status":x.status}}
 @router.get("/notifications")
 def notifications(u:User=Depends(current_user),db:Session=Depends(get_db)):
  rows=db.scalars(select(Notification).where(Notification.tenant_id==u.tenant_id,Notification.user_id==u.id).order_by(Notification.created_at.desc())).all();return {"data":[{"id":str(x.id),"title":x.title,"body":x.body,"status":x.status} for x in rows]}
