@@ -3,7 +3,7 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models.identity import Tenant, Campus, User, Role, Permission, UserRole, RolePermission
-PERMISSIONS=["platform.dashboard.view","users.user.view","users.user.create","academics.setup.admin","audit.event.view"]
+PERMISSIONS=["platform.dashboard.view","users.user.view","users.user.create","students.student.view","students.student.create","academics.setup.admin","audit.event.view"]
 def run():
     if not settings.seed_admin_password: raise RuntimeError("SEED_ADMIN_PASSWORD must be set.")
     with SessionLocal() as db:
