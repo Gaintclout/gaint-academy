@@ -1,1 +1,1 @@
-from app.models.identity import AuditEvent, Campus, Permission, Role, RolePermission, Tenant, User, UserRole
+from app.models.identity import AuditEvent, Campus, Permission, Role, RolePermission, Session, Tenant, User, UserRole
