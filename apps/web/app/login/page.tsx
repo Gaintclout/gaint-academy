@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 
 export default function LoginPage(){
   const router=useRouter();
+  const [institutionCode,setInstitutionCode]=useState("GAINT");
   const [email,setEmail]=useState("");
   const [password,setPassword]=useState("");
   const [error,setError]=useState("");
@@ -12,7 +13,7 @@ export default function LoginPage(){
     e.preventDefault(); setError(""); setLoading(true);
     try{
       const base=process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-      const r=await fetch(base+"/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({email,password})});
+      const r=await fetch(base+"/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({institution_code:institutionCode,email,password})});
       if(!r.ok) throw new Error("Invalid email or password");
       router.push("/dashboard");
     }catch(e){setError(e instanceof Error?e.message:"Login failed");}
@@ -21,6 +22,7 @@ export default function LoginPage(){
   return <main className="auth-shell"><form className="auth-card" onSubmit={submit}>
     <div className="brand-mark">GA</div><p className="eyebrow">GAINT ACADEMY</p>
     <h1>Welcome back</h1><p className="muted">Sign in to your institution workspace.</p>
+    <label>Institution code<input value={institutionCode} onChange={e=>setInstitutionCode(e.target.value.toUpperCase())} required autoComplete="organization"/></label>
     <label>Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} required autoComplete="email"/></label>
     <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} required autoComplete="current-password"/></label>
     {error&&<p className="error">{error}</p>}<button disabled={loading}>{loading?"Signing in…":"Sign in"}</button>
