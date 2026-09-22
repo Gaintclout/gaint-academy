@@ -102,7 +102,9 @@ def reset_password(payload:ResetPasswordIn,request:Request,db:DbSession=Depends(
     if not secrets.compare_digest(data.get("otp_hash",""),_otp_hash(payload.otp)):
         raise HTTPException(status_code=400,detail="Invalid or expired reset code")
     tenant=db.scalar(select(Tenant).where(Tenant.code==code,Tenant.status=="ACTIVE"))
-    user=None if not tenant else db.scalar(select(User).where(User.tenant_id==tenant.id,User.email==email,User.is_active.is_(True)))\n    if user and str(user.id)!=data.get("user_id"):\n        user=None
+    user=None if not tenant else db.scalar(select(User).where(User.tenant_id==tenant.id,User.email==email,User.is_active.is_(True)))
+    if user and str(user.id)!=data.get("user_id"):
+        user=None
     if not user:
         redis.delete(key)
         raise HTTPException(status_code=400,detail="Invalid or expired reset code")
