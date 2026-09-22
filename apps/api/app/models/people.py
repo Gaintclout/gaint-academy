@@ -13,6 +13,7 @@ class Guardian(Base):
     name:Mapped[str]=mapped_column(String(180),nullable=False)
     phone:Mapped[str]=mapped_column(String(30),nullable=False)
     email:Mapped[str|None]=mapped_column(String(320))
+    user_id:Mapped[uuid.UUID|None]=mapped_column(ForeignKey("users.id"),index=True,nullable=True)
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now,nullable=False)
 class StudentGuardian(Base):
     __tablename__="student_guardians"; __table_args__=(UniqueConstraint("tenant_id","student_id","guardian_id"),)
