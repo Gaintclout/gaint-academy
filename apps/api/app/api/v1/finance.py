@@ -8,7 +8,7 @@ from app.core.auth import current_user,permission_codes
 from app.db.session import get_db
 from app.models.identity import User,AuditEvent
 from app.models.academics import Student
-from app.models.finance import FeePlan,Invoice,Payment
+from app.models.finance import FeePlan,Invoice,Payment,PaymentOrder
 router=APIRouter(prefix="/finance",tags=["finance"])
 def req(db,u,p):
  if p not in permission_codes(db,u):raise HTTPException(403,"Permission denied")
@@ -33,3 +33,18 @@ def payment(p:PaymentIn,u:User=Depends(current_user),db:Session=Depends(get_db))
  due=inv.amount-inv.paid_amount
  if p.amount>due:raise HTTPException(422,"Payment exceeds invoice balance")
  x=Payment(tenant_id=u.tenant_id,**p.model_dump(),status="CONFIRMED");db.add(x);inv.paid_amount+=p.amount;inv.status="PAID" if inv.paid_amount==inv.amount else "PARTIALLY_PAID";db.flush();db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="finance.payment.confirmed",resource_type="payment",resource_id=str(x.id)));db.commit();db.refresh(x);return {"data":{"id":str(x.id),"status":x.status,"invoice_status":inv.status,"balance":str(inv.amount-inv.paid_amount)}}
+
+class PaymentOrderIn(BaseModel):
+ invoice_id:UUID;provider:str;provider_order_id:str;idempotency_key:str
+@router.post("/payment-orders",status_code=201)
+def create_payment_order(p:PaymentOrderIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"finance.payment.record")
+ existing=db.scalar(select(PaymentOrder).where(PaymentOrder.tenant_id==u.tenant_id,PaymentOrder.idempotency_key==p.idempotency_key))
+ if existing:return {"data":{"id":str(existing.id),"status":existing.status,"provider_order_id":existing.provider_order_id,"idempotent_replay":True}}
+ inv=db.scalar(select(Invoice).where(Invoice.id==p.invoice_id,Invoice.tenant_id==u.tenant_id))
+ if not inv:raise HTTPException(404,"Invoice not found")
+ due=inv.amount-inv.paid_amount
+ if due<=0:raise HTTPException(409,"Invoice has no outstanding balance")
+ x=PaymentOrder(tenant_id=u.tenant_id,invoice_id=inv.id,provider=p.provider,provider_order_id=p.provider_order_id,idempotency_key=p.idempotency_key,amount=due,status="CREATED")
+ db.add(x);db.flush();db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="finance.payment_order.created",resource_type="payment_order",resource_id=str(x.id)));db.commit();db.refresh(x)
+ return {"data":{"id":str(x.id),"status":x.status,"provider_order_id":x.provider_order_id,"amount":str(x.amount),"idempotent_replay":False}}
