@@ -1,0 +1,16 @@
+"""identity foundation"""
+from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
+revision="0001_identity_foundation"; down_revision=None; branch_labels=None; depends_on=None
+def upgrade():
+    op.create_table("tenants",sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),sa.Column("name",sa.String(160),nullable=False),sa.Column("code",sa.String(60),nullable=False,unique=True),sa.Column("status",sa.String(30),nullable=False),sa.Column("created_at",sa.DateTime(timezone=True),nullable=False))
+    op.create_table("campuses",sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),sa.Column("tenant_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("tenants.id"),nullable=False),sa.Column("name",sa.String(160),nullable=False),sa.Column("code",sa.String(60),nullable=False),sa.Column("status",sa.String(30),nullable=False),sa.UniqueConstraint("tenant_id","code"))
+    op.create_table("users",sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),sa.Column("tenant_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("tenants.id"),nullable=False),sa.Column("email",sa.String(320),nullable=False),sa.Column("password_hash",sa.Text(),nullable=False),sa.Column("is_active",sa.Boolean(),nullable=False),sa.Column("created_at",sa.DateTime(timezone=True),nullable=False),sa.UniqueConstraint("tenant_id","email"))
+    op.create_table("roles",sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),sa.Column("tenant_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("tenants.id"),nullable=False),sa.Column("code",sa.String(80),nullable=False),sa.Column("name",sa.String(120),nullable=False),sa.UniqueConstraint("tenant_id","code"))
+    op.create_table("permissions",sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),sa.Column("code",sa.String(160),nullable=False,unique=True))
+    op.create_table("user_roles",sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),sa.Column("tenant_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("tenants.id"),nullable=False),sa.Column("user_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("users.id"),nullable=False),sa.Column("role_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("roles.id"),nullable=False),sa.Column("scope_type",sa.String(40),nullable=False),sa.Column("scope_id",sa.String(80)),sa.UniqueConstraint("tenant_id","user_id","role_id"))
+    op.create_table("role_permissions",sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),sa.Column("role_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("roles.id"),nullable=False),sa.Column("permission_id",postgresql.UUID(as_uuid=True),sa.ForeignKey("permissions.id"),nullable=False),sa.UniqueConstraint("role_id","permission_id"))
+    op.create_table("audit_events",sa.Column("id",postgresql.UUID(as_uuid=True),primary_key=True),sa.Column("tenant_id",postgresql.UUID(as_uuid=True)),sa.Column("user_id",postgresql.UUID(as_uuid=True)),sa.Column("action",sa.String(160),nullable=False),sa.Column("resource_type",sa.String(100),nullable=False),sa.Column("resource_id",sa.String(100)),sa.Column("request_id",sa.String(80)),sa.Column("created_at",sa.DateTime(timezone=True),nullable=False))
+def downgrade():
+    for table in ["audit_events","role_permissions","user_roles","permissions","roles","users","campuses","tenants"]: op.drop_table(table)
