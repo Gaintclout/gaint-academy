@@ -7,6 +7,8 @@ from app.api.v1.people import router as people_router
 from app.api.v1.attendance import router as attendance_router
 from app.api.v1.learning import router as learning_router
 from app.api.v1.finance import router as finance_router
+from app.api.v1.communication import router as communication_router
+from app.api.v1.reports import router as reports_router
 router=APIRouter(prefix="/api/v1")
 router.include_router(auth_router)
 router.include_router(dashboard_router)
@@ -16,5 +18,7 @@ router.include_router(people_router)
 router.include_router(attendance_router)
 router.include_router(learning_router)
 router.include_router(finance_router)
+router.include_router(communication_router)
+router.include_router(reports_router)
 @router.get("")
 def root(): return {"name":"GAINT Academy","version":"v1"}
