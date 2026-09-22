@@ -1,10 +1,12 @@
 from decimal import Decimal
+import hashlib,hmac
 from uuid import UUID
-from fastapi import APIRouter,Depends,HTTPException
+from fastapi import APIRouter,Depends,HTTPException,Header,Request
 from pydantic import BaseModel,Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.auth import current_user,permission_codes
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.identity import User,AuditEvent
 from app.models.academics import Student
@@ -48,3 +50,23 @@ def create_payment_order(p:PaymentOrderIn,u:User=Depends(current_user),db:Sessio
  x=PaymentOrder(tenant_id=u.tenant_id,invoice_id=inv.id,provider=p.provider,provider_order_id=p.provider_order_id,idempotency_key=p.idempotency_key,amount=due,status="CREATED")
  db.add(x);db.flush();db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="finance.payment_order.created",resource_type="payment_order",resource_id=str(x.id)));db.commit();db.refresh(x)
  return {"data":{"id":str(x.id),"status":x.status,"provider_order_id":x.provider_order_id,"amount":str(x.amount),"idempotent_replay":False}}
+
+class WebhookIn(BaseModel):
+ provider_order_id:str;payment_reference:str;status:str
+@router.post("/webhooks/payment")
+async def payment_webhook(p:WebhookIn,request:Request,x_payment_signature:str|None=Header(default=None),db:Session=Depends(get_db)):
+ if not settings.payment_webhook_secret:raise HTTPException(503,"Payment webhook is not configured")
+ raw=await request.body();expected=hmac.new(settings.payment_webhook_secret.encode(),raw,hashlib.sha256).hexdigest()
+ if not x_payment_signature or not hmac.compare_digest(expected,x_payment_signature):raise HTTPException(401,"Invalid payment webhook signature")
+ order=db.scalar(select(PaymentOrder).where(PaymentOrder.provider_order_id==p.provider_order_id))
+ if not order:raise HTTPException(404,"Payment order not found")
+ if p.status!="CONFIRMED":return {"data":{"id":str(order.id),"status":order.status,"processed":False}}
+ existing=db.scalar(select(Payment).where(Payment.tenant_id==order.tenant_id,Payment.reference==p.payment_reference))
+ if existing:return {"data":{"id":str(order.id),"status":order.status,"processed":False,"idempotent_replay":True}}
+ inv=db.scalar(select(Invoice).where(Invoice.id==order.invoice_id,Invoice.tenant_id==order.tenant_id))
+ if not inv:raise HTTPException(404,"Invoice not found")
+ due=inv.amount-inv.paid_amount
+ amount=min(order.amount,due)
+ if amount<=0:raise HTTPException(409,"Invoice has no outstanding balance")
+ payment=Payment(tenant_id=order.tenant_id,invoice_id=inv.id,reference=p.payment_reference,amount=amount,method=order.provider,status="CONFIRMED");db.add(payment);inv.paid_amount+=amount;inv.status="PAID" if inv.paid_amount==inv.amount else "PARTIALLY_PAID";order.status="CONFIRMED";db.commit()
+ return {"data":{"id":str(order.id),"status":order.status,"processed":True}}
