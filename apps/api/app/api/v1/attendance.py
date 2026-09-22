@@ -9,6 +9,8 @@ from app.db.session import get_db
 from app.models.identity import User,AuditEvent
 from app.models.academics import Section,Enrollment,Student
 from app.models.attendance import TimetableSlot,AttendanceSession,AttendanceRecord
+from app.models.people import Guardian,StudentGuardian
+from app.models.communication import Notification
 router=APIRouter(tags=["attendance"])
 def require(db,u,c):
  if c not in permission_codes(db,u): raise HTTPException(403,"Permission denied")
@@ -51,4 +53,8 @@ def submit(session_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_d
  enrolled_count=len(db.scalars(select(Enrollment).where(Enrollment.tenant_id==u.tenant_id,Enrollment.section_id==s.section_id,Enrollment.status=="ACTIVE")).all())
  marked_count=len(db.scalars(select(AttendanceRecord).where(AttendanceRecord.tenant_id==u.tenant_id,AttendanceRecord.session_id==s.id)).all())
  if marked_count!=enrolled_count:raise HTTPException(409,"Attendance is incomplete for the active section roster")
+ absent_ids=db.scalars(select(AttendanceRecord.student_id).where(AttendanceRecord.tenant_id==u.tenant_id,AttendanceRecord.session_id==s.id,AttendanceRecord.status=="ABSENT")).all()
+ if absent_ids:
+  guardians=db.execute(select(StudentGuardian.student_id,Guardian.user_id).join(Guardian,Guardian.id==StudentGuardian.guardian_id).where(StudentGuardian.tenant_id==u.tenant_id,StudentGuardian.student_id.in_(absent_ids),Guardian.tenant_id==u.tenant_id,Guardian.user_id.is_not(None))).all()
+  for student_id,user_id in guardians:db.add(Notification(tenant_id=u.tenant_id,user_id=user_id,title="Attendance alert",body=f"Student {student_id} was marked absent on {s.attendance_date}."))
  s.status="SUBMITTED";db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="attendance.submitted",resource_type="attendance_session",resource_id=str(s.id)));db.commit();return {"data":{"id":str(s.id),"status":s.status}}
