@@ -5,3 +5,4 @@ from app.models.attendance import TimetableSlot, AttendanceSession, AttendanceRe
 from app.models.learning import Course, Assignment, Submission, Assessment, AssessmentMark
 from app.models.finance import FeePlan, Invoice, Payment
 from app.models.communication import Notice, Notification
+from app.models.campus import Integration, Grievance, Asset
