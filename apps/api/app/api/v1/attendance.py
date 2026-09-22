@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.auth import current_user,permission_codes
 from app.db.session import get_db
-from app.models.identity import User
+from app.models.identity import User,AuditEvent
 from app.models.academics import Section,Enrollment,Student
 from app.models.attendance import TimetableSlot,AttendanceSession,AttendanceRecord
 router=APIRouter(tags=["attendance"])
@@ -51,4 +51,4 @@ def submit(session_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_d
  enrolled_count=len(db.scalars(select(Enrollment).where(Enrollment.tenant_id==u.tenant_id,Enrollment.section_id==s.section_id,Enrollment.status=="ACTIVE")).all())
  marked_count=len(db.scalars(select(AttendanceRecord).where(AttendanceRecord.tenant_id==u.tenant_id,AttendanceRecord.session_id==s.id)).all())
  if marked_count!=enrolled_count:raise HTTPException(409,"Attendance is incomplete for the active section roster")
- s.status="SUBMITTED";db.commit();return {"data":{"id":str(s.id),"status":s.status}}
+ s.status="SUBMITTED";db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="attendance.submitted",resource_type="attendance_session",resource_id=str(s.id)));db.commit();return {"data":{"id":str(s.id),"status":s.status}}

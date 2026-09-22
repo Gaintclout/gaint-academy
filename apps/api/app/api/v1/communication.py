@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.auth import current_user,permission_codes
 from app.db.session import get_db
-from app.models.identity import User
+from app.models.identity import User,AuditEvent
 from app.models.communication import Notice,Notification
 router=APIRouter(tags=["communication"])
 def req(db,u,p):
@@ -24,7 +24,7 @@ def publish(notice_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_d
  req(db,u,"communication.notice.publish");x=db.scalar(select(Notice).where(Notice.id==notice_id,Notice.tenant_id==u.tenant_id))
  if not x:raise HTTPException(404,"Notice not found")
  if x.status!="DRAFT":raise HTTPException(409,"Notice is not in DRAFT state")
- x.status="PUBLISHED";x.published_at=datetime.now(timezone.utc);db.commit();return {"data":{"id":str(x.id),"status":x.status}}
+ x.status="PUBLISHED";x.published_at=datetime.now(timezone.utc);db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="notice.published",resource_type="notice",resource_id=str(x.id)));db.commit();return {"data":{"id":str(x.id),"status":x.status}}
 @router.get("/notifications")
 def notifications(u:User=Depends(current_user),db:Session=Depends(get_db)):
  rows=db.scalars(select(Notification).where(Notification.tenant_id==u.tenant_id,Notification.user_id==u.id).order_by(Notification.created_at.desc())).all();return {"data":[{"id":str(x.id),"title":x.title,"body":x.body,"status":x.status} for x in rows]}
