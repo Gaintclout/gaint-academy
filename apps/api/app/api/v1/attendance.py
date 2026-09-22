@@ -20,6 +20,7 @@ def slot(p:SlotIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
  x=TimetableSlot(tenant_id=u.tenant_id,**p.model_dump());db.add(x);db.commit();db.refresh(x);return {"data":{"id":str(x.id)}}
 @router.get("/timetable")
 def slots(section_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ require(db,u,"timetable.slot.view")
  rows=db.scalars(select(TimetableSlot).where(TimetableSlot.tenant_id==u.tenant_id,TimetableSlot.section_id==section_id)).all()
  return {"data":[{"id":str(x.id),"subject_name":x.subject_name,"weekday":x.weekday,"start_time":str(x.start_time),"end_time":str(x.end_time)} for x in rows]}
 class AttendanceIn(BaseModel): section_id:UUID;attendance_date:date
@@ -46,4 +47,8 @@ def mark(session_id:UUID,records:list[RecordIn],u:User=Depends(current_user),db:
 def submit(session_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_db)):
  require(db,u,"attendance.session.submit");s=db.scalar(select(AttendanceSession).where(AttendanceSession.id==session_id,AttendanceSession.tenant_id==u.tenant_id))
  if not s:raise HTTPException(404,"Attendance session not found")
+ if s.status!="DRAFT":raise HTTPException(409,"Attendance session is not in DRAFT state")
+ enrolled_count=len(db.scalars(select(Enrollment).where(Enrollment.tenant_id==u.tenant_id,Enrollment.section_id==s.section_id,Enrollment.status=="ACTIVE")).all())
+ marked_count=len(db.scalars(select(AttendanceRecord).where(AttendanceRecord.tenant_id==u.tenant_id,AttendanceRecord.session_id==s.id)).all())
+ if marked_count!=enrolled_count:raise HTTPException(409,"Attendance is incomplete for the active section roster")
  s.status="SUBMITTED";db.commit();return {"data":{"id":str(s.id),"status":s.status}}

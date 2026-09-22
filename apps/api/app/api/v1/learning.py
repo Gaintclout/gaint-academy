@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from app.core.auth import current_user,permission_codes
 from app.db.session import get_db
 from app.models.identity import User
-from app.models.academics import Section
-from app.models.learning import Course,Assignment,Assessment,AssessmentMark
+from app.models.academics import Section,Enrollment
+from app.models.learning import Course,Assignment,Assessment,AssessmentMark,Submission
 router=APIRouter(tags=["learning"])
 def req(db,u,p):
  if p not in permission_codes(db,u):raise HTTPException(403,"Permission denied")
@@ -20,6 +20,7 @@ def course(p:CourseIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
  x=Course(tenant_id=u.tenant_id,**p.model_dump());db.add(x);db.commit();db.refresh(x);return {"data":{"id":str(x.id),"name":x.name}}
 @router.get("/courses")
 def courses(u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"learning.course.view")
  rows=db.scalars(select(Course).where(Course.tenant_id==u.tenant_id)).all();return {"data":[{"id":str(x.id),"name":x.name,"section_id":str(x.section_id),"status":x.status} for x in rows]}
 class AssignmentIn(BaseModel):course_id:UUID;title:str;instructions:str|None=None;max_marks:int=100;due_at:datetime|None=None
 @router.post("/assignments",status_code=201)
@@ -38,12 +39,23 @@ class MarkIn(BaseModel):student_id:UUID;marks:int
 def marks(assessment_id:UUID,rows:list[MarkIn],u:User=Depends(current_user),db:Session=Depends(get_db)):
  req(db,u,"assessment.marks.manage");a=db.scalar(select(Assessment).where(Assessment.id==assessment_id,Assessment.tenant_id==u.tenant_id))
  if not a:raise HTTPException(404,"Assessment not found")
+ course=db.scalar(select(Course).where(Course.id==a.course_id,Course.tenant_id==u.tenant_id))
  for r in rows:
+  enrolled=db.scalar(select(Enrollment).where(Enrollment.tenant_id==u.tenant_id,Enrollment.section_id==course.section_id,Enrollment.student_id==r.student_id,Enrollment.status=="ACTIVE"))
+  if not enrolled:raise HTTPException(422,"Student is not actively enrolled in the course section")
   if r.marks<0 or r.marks>a.max_marks:raise HTTPException(422,"Marks outside assessment range")
   x=db.scalar(select(AssessmentMark).where(AssessmentMark.tenant_id==u.tenant_id,AssessmentMark.assessment_id==a.id,AssessmentMark.student_id==r.student_id))
   if x:x.marks=r.marks
   else:db.add(AssessmentMark(tenant_id=u.tenant_id,assessment_id=a.id,student_id=r.student_id,marks=r.marks))
  db.commit();return {"data":{"saved":len(rows)}}
+class SubmissionIn(BaseModel):student_id:UUID;content:str
+@router.post("/assignments/{assignment_id}/submissions",status_code=201)
+def submit_assignment(assignment_id:UUID,p:SubmissionIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"learning.submission.create");a=db.scalar(select(Assignment).where(Assignment.id==assignment_id,Assignment.tenant_id==u.tenant_id));c=None if not a else db.scalar(select(Course).where(Course.id==a.course_id,Course.tenant_id==u.tenant_id))
+ if not a or not c:raise HTTPException(404,"Assignment not found")
+ enrolled=db.scalar(select(Enrollment).where(Enrollment.tenant_id==u.tenant_id,Enrollment.section_id==c.section_id,Enrollment.student_id==p.student_id,Enrollment.status=="ACTIVE"))
+ if not enrolled:raise HTTPException(422,"Student is not actively enrolled in the course section")
+ x=Submission(tenant_id=u.tenant_id,assignment_id=a.id,student_id=p.student_id,content=p.content);db.add(x);db.commit();db.refresh(x);return {"data":{"id":str(x.id),"status":x.status}}
 @router.post("/assessments/{assessment_id}/publish")
 def publish(assessment_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_db)):
  req(db,u,"assessment.publish");a=db.scalar(select(Assessment).where(Assessment.id==assessment_id,Assessment.tenant_id==u.tenant_id))

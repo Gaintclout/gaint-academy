@@ -14,14 +14,15 @@ class StudentIn(BaseModel): admission_no:str; first_name:str; last_name:str|None
 class EnrollIn(BaseModel): academic_year_id:UUID; class_id:UUID; section_id:UUID
 @router.get("")
 def list_students(user:User=Depends(current_user),db:Session=Depends(get_db)):
-    require(db,user,"users.user.view")
+    require(db,user,"students.student.view")
     rows=db.scalars(select(Student).where(Student.tenant_id==user.tenant_id).order_by(Student.created_at.desc())).all()
     return {"data":[{"id":str(x.id),"admission_no":x.admission_no,"name":(x.first_name+" "+(x.last_name or "")).strip(),"email":x.email,"status":x.status} for x in rows]}
 @router.post("",status_code=201)
 def create_student(p:StudentIn,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    require(db,user,"users.user.create"); x=Student(tenant_id=user.tenant_id,**p.model_dump()); db.add(x); db.commit(); db.refresh(x); return {"data":{"id":str(x.id),"admission_no":x.admission_no}}
+    require(db,user,"students.student.create"); x=Student(tenant_id=user.tenant_id,**p.model_dump()); db.add(x); db.commit(); db.refresh(x); return {"data":{"id":str(x.id),"admission_no":x.admission_no}}
 @router.get("/{student_id}")
 def student(student_id:UUID,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require(db,user,"students.student.view")
     x=db.scalar(select(Student).where(Student.id==student_id,Student.tenant_id==user.tenant_id))
     if not x: raise HTTPException(404,"Student not found")
     enroll=db.scalar(select(Enrollment).where(Enrollment.student_id==x.id,Enrollment.tenant_id==user.tenant_id,Enrollment.status=="ACTIVE"))
