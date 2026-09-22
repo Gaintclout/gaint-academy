@@ -6,3 +6,4 @@ from app.models.learning import Course, Assignment, Submission, Assessment, Asse
 from app.models.finance import FeePlan, Invoice, Payment
 from app.models.communication import Notice, Notification
 from app.models.campus import Integration, Grievance, Asset
+from app.models.campus import Integration, Grievance, Asset
