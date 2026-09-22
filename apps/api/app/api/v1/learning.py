@@ -1,0 +1,51 @@
+from datetime import datetime
+from uuid import UUID
+from fastapi import APIRouter,Depends,HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from app.core.auth import current_user,permission_codes
+from app.db.session import get_db
+from app.models.identity import User
+from app.models.academics import Section
+from app.models.learning import Course,Assignment,Assessment,AssessmentMark
+router=APIRouter(tags=["learning"])
+def req(db,u,p):
+ if p not in permission_codes(db,u):raise HTTPException(403,"Permission denied")
+class CourseIn(BaseModel):section_id:UUID;teacher_id:UUID|None=None;name:str
+@router.post("/courses",status_code=201)
+def course(p:CourseIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"learning.course.manage");sec=db.scalar(select(Section).where(Section.id==p.section_id,Section.tenant_id==u.tenant_id))
+ if not sec:raise HTTPException(404,"Section not found")
+ x=Course(tenant_id=u.tenant_id,**p.model_dump());db.add(x);db.commit();db.refresh(x);return {"data":{"id":str(x.id),"name":x.name}}
+@router.get("/courses")
+def courses(u:User=Depends(current_user),db:Session=Depends(get_db)):
+ rows=db.scalars(select(Course).where(Course.tenant_id==u.tenant_id)).all();return {"data":[{"id":str(x.id),"name":x.name,"section_id":str(x.section_id),"status":x.status} for x in rows]}
+class AssignmentIn(BaseModel):course_id:UUID;title:str;instructions:str|None=None;max_marks:int=100;due_at:datetime|None=None
+@router.post("/assignments",status_code=201)
+def assignment(p:AssignmentIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"learning.assignment.manage");c=db.scalar(select(Course).where(Course.id==p.course_id,Course.tenant_id==u.tenant_id))
+ if not c:raise HTTPException(404,"Course not found")
+ x=Assignment(tenant_id=u.tenant_id,**p.model_dump());db.add(x);db.commit();db.refresh(x);return {"data":{"id":str(x.id),"status":x.status}}
+class AssessmentIn(BaseModel):course_id:UUID;name:str;max_marks:int=100
+@router.post("/assessments",status_code=201)
+def assessment(p:AssessmentIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"assessment.manage");c=db.scalar(select(Course).where(Course.id==p.course_id,Course.tenant_id==u.tenant_id))
+ if not c:raise HTTPException(404,"Course not found")
+ x=Assessment(tenant_id=u.tenant_id,**p.model_dump());db.add(x);db.commit();db.refresh(x);return {"data":{"id":str(x.id),"status":x.status}}
+class MarkIn(BaseModel):student_id:UUID;marks:int
+@router.put("/assessments/{assessment_id}/marks")
+def marks(assessment_id:UUID,rows:list[MarkIn],u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"assessment.marks.manage");a=db.scalar(select(Assessment).where(Assessment.id==assessment_id,Assessment.tenant_id==u.tenant_id))
+ if not a:raise HTTPException(404,"Assessment not found")
+ for r in rows:
+  if r.marks<0 or r.marks>a.max_marks:raise HTTPException(422,"Marks outside assessment range")
+  x=db.scalar(select(AssessmentMark).where(AssessmentMark.tenant_id==u.tenant_id,AssessmentMark.assessment_id==a.id,AssessmentMark.student_id==r.student_id))
+  if x:x.marks=r.marks
+  else:db.add(AssessmentMark(tenant_id=u.tenant_id,assessment_id=a.id,student_id=r.student_id,marks=r.marks))
+ db.commit();return {"data":{"saved":len(rows)}}
+@router.post("/assessments/{assessment_id}/publish")
+def publish(assessment_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"assessment.publish");a=db.scalar(select(Assessment).where(Assessment.id==assessment_id,Assessment.tenant_id==u.tenant_id))
+ if not a:raise HTTPException(404,"Assessment not found")
+ a.status="PUBLISHED";db.query(AssessmentMark).filter(AssessmentMark.tenant_id==u.tenant_id,AssessmentMark.assessment_id==a.id).update({"status":"PUBLISHED"});db.commit();return {"data":{"id":str(a.id),"status":a.status}}
