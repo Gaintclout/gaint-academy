@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.auth import current_user,permission_codes
 from app.db.session import get_db
-from app.models.identity import User
+from app.models.identity import User,AuditEvent
 from app.models.academics import Student
 from app.models.finance import FeePlan,Invoice,Payment
 router=APIRouter(prefix="/finance",tags=["finance"])
@@ -32,4 +32,4 @@ def payment(p:PaymentIn,u:User=Depends(current_user),db:Session=Depends(get_db))
  if not inv:raise HTTPException(404,"Invoice not found")
  due=inv.amount-inv.paid_amount
  if p.amount>due:raise HTTPException(422,"Payment exceeds invoice balance")
- x=Payment(tenant_id=u.tenant_id,**p.model_dump(),status="CONFIRMED");db.add(x);inv.paid_amount+=p.amount;inv.status="PAID" if inv.paid_amount==inv.amount else "PARTIALLY_PAID";db.commit();db.refresh(x);return {"data":{"id":str(x.id),"status":x.status,"invoice_status":inv.status,"balance":str(inv.amount-inv.paid_amount)}}
+ x=Payment(tenant_id=u.tenant_id,**p.model_dump(),status="CONFIRMED");db.add(x);inv.paid_amount+=p.amount;inv.status="PAID" if inv.paid_amount==inv.amount else "PARTIALLY_PAID";db.flush();db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="finance.payment.confirmed",resource_type="payment",resource_id=str(x.id)));db.commit();db.refresh(x);return {"data":{"id":str(x.id),"status":x.status,"invoice_status":inv.status,"balance":str(inv.amount-inv.paid_amount)}}
