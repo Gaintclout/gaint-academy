@@ -9,5 +9,6 @@ class Settings(BaseSettings):
     session_hours:int=8
     cookie_secure:bool=False
     cors_origins:list[str]=["http://localhost:3000"]
+    payment_webhook_secret:str|None=None
     model_config=SettingsConfigDict(env_file=".env",extra="ignore")
 settings=Settings()
