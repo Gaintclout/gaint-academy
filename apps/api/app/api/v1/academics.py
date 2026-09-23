@@ -16,12 +16,14 @@ class ClassIn(BaseModel): academic_year_id:UUID; name:str
 class SectionIn(BaseModel): class_id:UUID; name:str
 @router.get("/years")
 def years(user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require(db,user,"academics.setup.admin")
     return {"data":[{"id":str(x.id),"name":x.name,"status":x.status} for x in db.scalars(select(AcademicYear).where(AcademicYear.tenant_id==user.tenant_id)).all()]}
 @router.post("/years",status_code=201)
 def create_year(p:YearIn,r:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
     require(db,user,"academics.setup.admin"); x=AcademicYear(tenant_id=user.tenant_id,**p.model_dump()); db.add(x); db.flush(); db.add(AuditEvent(tenant_id=user.tenant_id,user_id=user.id,action="academics.year.create",resource_type="academic_year",resource_id=str(x.id),request_id=r.state.request_id)); db.commit(); return {"data":{"id":str(x.id),"name":x.name}}
 @router.get("/classes")
 def classes(academic_year_id:UUID,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require(db,user,"academics.setup.admin")
     rows=db.scalars(select(AcademicClass).where(AcademicClass.tenant_id==user.tenant_id,AcademicClass.academic_year_id==academic_year_id)).all()
     return {"data":[{"id":str(x.id),"name":x.name,"academic_year_id":str(x.academic_year_id)} for x in rows]}
 
@@ -32,6 +34,7 @@ def create_class(p:ClassIn,user:User=Depends(current_user),db:Session=Depends(ge
     x=AcademicClass(tenant_id=user.tenant_id,**p.model_dump()); db.add(x); db.commit(); db.refresh(x); return {"data":{"id":str(x.id),"name":x.name}}
 @router.get("/sections")
 def sections(class_id:UUID,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require(db,user,"academics.setup.admin")
     rows=db.scalars(select(Section).where(Section.tenant_id==user.tenant_id,Section.class_id==class_id)).all()
     return {"data":[{"id":str(x.id),"name":x.name,"class_id":str(x.class_id)} for x in rows]}
 
