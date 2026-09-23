@@ -71,5 +71,7 @@ Foundation → Core Modules → Authorization Hardening → Security/UX Stabiliz
 
 - UAT gate: `docs/UAT_CHECKLIST.md`
 - Release candidate notes: `docs/RELEASE_NOTES_v1.1_RC.md`
+- Final UAT execution guide: `docs/V1_1_UAT_EXECUTION.md`
+- Local UAT smoke runner: `scripts/uat_smoke.ps1`
 
 The current release candidate is for local/UAT validation only. Production deployment requires the full P0 UAT gate to pass.
