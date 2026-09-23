@@ -37,11 +37,17 @@ def summary(request:Request,user:User=Depends(current_user),db:Session=Depends(g
         linked=db.scalars(select(Student.id).join(StudentGuardian,StudentGuardian.student_id==Student.id).join(Guardian,Guardian.id==StudentGuardian.guardian_id).where(Student.tenant_id==user.tenant_id,StudentGuardian.tenant_id==user.tenant_id,Guardian.tenant_id==user.tenant_id,Guardian.user_id==user.id)).all()
         student_count=len(set(linked))
         invoice_count=0 if not linked else count(db,Invoice,user.tenant_id,Invoice.student_id.in_(linked),Invoice.status!="PAID")
+        attendance_total=0; attendance_present=0
+        if linked:
+            attendance_total=db.scalar(select(func.count()).select_from(AttendanceRecord).join(AttendanceSession,AttendanceSession.id==AttendanceRecord.session_id).where(AttendanceRecord.tenant_id==user.tenant_id,AttendanceRecord.student_id.in_(linked),AttendanceSession.tenant_id==user.tenant_id,AttendanceSession.status=="SUBMITTED")) or 0
+            attendance_present=db.scalar(select(func.count()).select_from(AttendanceRecord).join(AttendanceSession,AttendanceSession.id==AttendanceRecord.session_id).where(AttendanceRecord.tenant_id==user.tenant_id,AttendanceRecord.student_id.in_(linked),AttendanceRecord.status=="PRESENT",AttendanceSession.tenant_id==user.tenant_id,AttendanceSession.status=="SUBMITTED")) or 0
+        attendance_rate="—" if not attendance_total else f"{round((attendance_present/attendance_total)*100)}%"
+        visible_notice_count=count(db,Notice,user.tenant_id,Notice.status=="PUBLISHED",Notice.audience.in_({"ALL","PARENT"}))
         metrics=[
             {"label":"Linked children","value":student_count,"href":"/students"},
             {"label":"Open invoices","value":invoice_count,"href":"/finance"},
-            {"label":"Published notices","value":count(db,Notice,user.tenant_id,Notice.status=="PUBLISHED"),"href":"/communication"},
-            {"label":"Role","value":"PARENT / GUARDIAN","href":None},
+            {"label":"Attendance","value":attendance_rate,"href":"/attendance"},
+            {"label":"Published notices","value":visible_notice_count,"href":"/communication"},
         ]
         heading="Your family overview"; description="A summary of your linked students and current academy activity."
     elif "TEACHER" in roles:
