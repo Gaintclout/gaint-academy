@@ -32,5 +32,6 @@ export async function apiFetch(path:string,init:RequestInit={}){
   const response=await fetch(API_URL+path,{...init,credentials:"include",headers});
   if(response.status===403&&!SAFE_METHODS.has(method)&&!PUBLIC_MUTATIONS.has(path))csrfToken=null;
   if(!response.ok)throw await parseError(response);
+  if(path==="/auth/login"||path==="/auth/logout")csrfToken=null;
   return response.json();
 }
