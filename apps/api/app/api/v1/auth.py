@@ -4,6 +4,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session as DbSession
 from app.db.session import get_db
@@ -37,19 +38,50 @@ class ChangePasswordIn(BaseModel):
 def _redis() -> Redis:
     return Redis.from_url(settings.redis_url,decode_responses=True)
 
-def _reset_key(institution_code:str,email:str)->str:
+def _identity_digest(institution_code:str,email:str)->str:
     identity=f"{institution_code.strip().upper()}:{email.strip().lower()}".encode()
-    return "auth:reset:"+hashlib.sha256(identity).hexdigest()
+    return hashlib.sha256(identity).hexdigest()
+
+def _reset_key(institution_code:str,email:str)->str:
+    return "auth:reset:"+_identity_digest(institution_code,email)
+
+def _login_key(institution_code:str,email:str)->str:
+    return "auth:login:"+_identity_digest(institution_code,email)
+
+def _login_redis_or_fail():
+    try:
+        redis=_redis();redis.ping();return redis
+    except RedisError:
+        if settings.app_env.lower() in {"production","staging"}:
+            raise HTTPException(status_code=503,detail="Authentication protection is temporarily unavailable")
+        return None
+
+def _check_login_limit(redis,key:str)->None:
+    if redis and int(redis.get(key) or 0)>=settings.login_max_attempts:
+        raise HTTPException(status_code=429,detail="Too many login attempts. Try again later.")
+
+def _record_login_failure(redis,key:str)->None:
+    if not redis:return
+    count=redis.incr(key)
+    if count==1:redis.expire(key,settings.login_window_seconds)
+
+def _clear_login_failures(redis,key:str)->None:
+    if redis:redis.delete(key)
 
 def _otp_hash(otp:str)->str:
     return hashlib.sha256(otp.encode()).hexdigest()
 
 @router.post("/login")
 def login(payload:LoginIn,request:Request,response:Response,db:DbSession=Depends(get_db)):
+    login_key=_login_key(payload.institution_code,payload.email)
+    redis=_login_redis_or_fail()
+    _check_login_limit(redis,login_key)
     tenant=db.scalar(select(Tenant).where(Tenant.code==payload.institution_code.strip().upper(),Tenant.status=="ACTIVE"))
     user=None if not tenant else db.scalar(select(User).where(User.tenant_id==tenant.id,User.email==payload.email.lower(),User.is_active.is_(True)))
     if not user or not verify_password(payload.password,user.password_hash):
+        _record_login_failure(redis,login_key)
         raise HTTPException(status_code=401,detail="Invalid credentials")
+    _clear_login_failures(redis,login_key)
     raw,digest=new_session_token()
     db.add(Session(tenant_id=user.tenant_id,user_id=user.id,token_hash=digest,expires_at=now()+timedelta(hours=settings.session_hours)))
     db.add(AuditEvent(tenant_id=user.tenant_id,user_id=user.id,action="auth.login",resource_type="user",resource_id=str(user.id),request_id=request.state.request_id))
