@@ -9,7 +9,8 @@ def test_operational_roles_are_seeded_with_least_privilege_sets():
  assert '"finance.payment.record"' in s[s.index("ACCOUNTS_PERMISSIONS"):s.index("HR_PERMISSIONS")]
  assert '"finance.payment.record"' not in s[s.index("HR_PERMISSIONS"):s.index("CAMPUS_ADMIN_PERMISSIONS")]
  assert '"finance.payment.record"' not in s[s.index("CAMPUS_ADMIN_PERMISSIONS"):s.index("AUDITOR_PERMISSIONS")]
- assert '"audit.event.view"' in s[s.index("AUDITOR_PERMISSIONS"):s.index("PERMISSIONS=")]
+ auditor=s[s.index("AUDITOR_PERMISSIONS"):s.index("\nPERMISSIONS=",s.index("AUDITOR_PERMISSIONS"))]
+ assert '"audit.event.view"' in auditor
 
 def test_hr_and_campus_admin_do_not_receive_reports_by_default():
  s=read("app/scripts/seed.py")
