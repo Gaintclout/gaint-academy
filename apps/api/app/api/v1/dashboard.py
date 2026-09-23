@@ -6,7 +6,7 @@ from app.db.session import get_db
 from app.models.identity import User
 from app.models.academics import Student
 from app.models.people import Staff, Guardian, StudentGuardian
-from app.models.attendance import AttendanceSession
+from app.models.attendance import AttendanceSession, AttendanceRecord
 from app.models.finance import Invoice
 from app.models.communication import Notice
 
@@ -21,10 +21,15 @@ def summary(request:Request,user:User=Depends(current_user),db:Session=Depends(g
     student_role="STUDENT" in roles
     if student_role:
         own=scoped_student_id(db,user)
+        submitted=0; present=0
+        if own:
+            submitted=db.scalar(select(func.count()).select_from(AttendanceRecord).join(AttendanceSession,AttendanceSession.id==AttendanceRecord.session_id).where(AttendanceRecord.tenant_id==user.tenant_id,AttendanceRecord.student_id==own,AttendanceSession.tenant_id==user.tenant_id,AttendanceSession.status=="SUBMITTED")) or 0
+            present=db.scalar(select(func.count()).select_from(AttendanceRecord).join(AttendanceSession,AttendanceSession.id==AttendanceRecord.session_id).where(AttendanceRecord.tenant_id==user.tenant_id,AttendanceRecord.student_id==own,AttendanceRecord.status=="PRESENT",AttendanceSession.tenant_id==user.tenant_id,AttendanceSession.status=="SUBMITTED")) or 0
+        attendance_rate="—" if not submitted else f"{round((present/submitted)*100)}%"
         metrics=[
             {"label":"My profile","value":"Linked" if own else "Not linked","href":"/students"},
+            {"label":"Attendance","value":attendance_rate,"href":"/attendance"},
             {"label":"Learning","value":"My courses","href":"/learning"},
-            {"label":"Attendance","value":"My attendance","href":"/attendance"},
             {"label":"Role","value":"STUDENT","href":None},
         ]
         heading="Your student workspace"; description="Your academic profile, learning and attendance workspace."
