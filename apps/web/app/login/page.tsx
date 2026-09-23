@@ -2,6 +2,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import {apiFetch} from "../../lib/api";
 
 export default function LoginPage(){
   const router=useRouter();
@@ -13,9 +14,7 @@ export default function LoginPage(){
   async function submit(e:FormEvent){
     e.preventDefault(); setError(""); setLoading(true);
     try{
-      const base=process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-      const r=await fetch(base+"/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({institution_code:institutionCode,email,password})});
-      if(!r.ok) throw new Error("Invalid email or password");
+      await apiFetch("/auth/login",{method:"POST",body:JSON.stringify({institution_code:institutionCode,email,password})});
       router.push("/dashboard");
     }catch(e){setError(e instanceof Error?e.message:"Login failed");}
     finally{setLoading(false);}
