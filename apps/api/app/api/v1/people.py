@@ -93,3 +93,28 @@ def create_teacher_account(staff_id:UUID,p:TeacherAccountIn,user:User=Depends(cu
     if not staff.email:staff.email=email
     db.commit()
     return {"data":{"user_id":str(target.id),"staff_id":str(staff.id),"email":target.email,"role":"TEACHER"}}
+
+OPERATIONAL_ROLE_CODES={"ACCOUNTS","HR","CAMPUS_ADMIN","AUDITOR"}
+
+class OperationalAccountIn(BaseModel):
+    email:EmailStr
+    password:str
+    role_code:str
+
+@router.post("/users/operational-account",status_code=201)
+def create_operational_account(p:OperationalAccountIn,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    require(db,user,"users.user.create")
+    role_code=p.role_code.upper()
+    if role_code not in OPERATIONAL_ROLE_CODES:
+        raise HTTPException(422,"Unsupported operational role")
+    email=p.email.lower()
+    if len(p.password)<10: raise HTTPException(422,"Password must be at least 10 characters")
+    if db.scalar(select(User).where(User.tenant_id==user.tenant_id,User.email==email)):
+        raise HTTPException(409,"Email already exists")
+    role=db.scalar(select(Role).where(Role.tenant_id==user.tenant_id,Role.code==role_code))
+    if not role: raise HTTPException(409,"Operational role is not configured")
+    target=User(tenant_id=user.tenant_id,email=email,password_hash=hash_password(p.password))
+    db.add(target);db.flush()
+    db.add(UserRole(tenant_id=user.tenant_id,user_id=target.id,role_id=role.id,scope_type="TENANT",scope_id=None))
+    db.commit()
+    return {"data":{"user_id":str(target.id),"email":target.email,"role":role_code}}
