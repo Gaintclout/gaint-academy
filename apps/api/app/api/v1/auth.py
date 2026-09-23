@@ -13,6 +13,7 @@ from app.core.security import verify_password, hash_password
 from app.core.auth import SESSION_COOKIE, current_user, new_session_token, permission_codes, role_codes, role_scopes, token_hash
 from app.core.config import settings
 from app.core.email import send_password_reset_otp
+from app.core.csrf import CSRF_COOKIE,new_csrf_token
 
 router=APIRouter(prefix="/auth",tags=["auth"])
 
@@ -87,6 +88,8 @@ def login(payload:LoginIn,request:Request,response:Response,db:DbSession=Depends
     db.add(AuditEvent(tenant_id=user.tenant_id,user_id=user.id,action="auth.login",resource_type="user",resource_id=str(user.id),request_id=request.state.request_id))
     db.commit()
     response.set_cookie(SESSION_COOKIE,raw,httponly=True,secure=settings.cookie_secure,samesite="lax",max_age=settings.session_hours*3600,path="/")
+    csrf=new_csrf_token()
+    response.set_cookie(CSRF_COOKIE,csrf,httponly=False,secure=settings.cookie_secure,samesite="lax",max_age=settings.session_hours*3600,path="/")
     return {"data":{"user_id":str(user.id),"tenant_id":str(user.tenant_id),"email":user.email},"request_id":request.state.request_id}
 
 @router.post("/forgot-password")
@@ -166,6 +169,13 @@ def change_password(payload:ChangePasswordIn,request:Request,user:User=Depends(c
 def me(request:Request,user:User=Depends(current_user),db:DbSession=Depends(get_db)):
     return {"data":{"user_id":str(user.id),"tenant_id":str(user.tenant_id),"email":user.email,"roles":role_codes(db,user),"scopes":role_scopes(db,user),"permissions":permission_codes(db,user)},"request_id":request.state.request_id}
 
+@router.get("/csrf")
+def csrf_token(request:Request,response:Response,user:User=Depends(current_user)):
+    token=new_csrf_token()
+    response.set_cookie(CSRF_COOKIE,token,httponly=False,secure=settings.cookie_secure,samesite="lax",max_age=settings.session_hours*3600,path="/")
+    return {"data":{"csrf_token":token},"request_id":request.state.request_id}
+
+
 @router.post("/logout")
 def logout(request:Request,response:Response,session_token:str|None=None,user:User=Depends(current_user),db:DbSession=Depends(get_db)):
     raw=request.cookies.get(SESSION_COOKIE)
@@ -173,5 +183,5 @@ def logout(request:Request,response:Response,session_token:str|None=None,user:Us
         session=db.scalar(select(Session).where(Session.token_hash==token_hash(raw),Session.user_id==user.id,Session.revoked_at.is_(None)))
         if session: session.revoked_at=now()
     db.add(AuditEvent(tenant_id=user.tenant_id,user_id=user.id,action="auth.logout",resource_type="user",resource_id=str(user.id),request_id=request.state.request_id))
-    db.commit(); response.delete_cookie(SESSION_COOKIE,path="/")
+    db.commit(); response.delete_cookie(SESSION_COOKIE,path="/"); response.delete_cookie(CSRF_COOKIE,path="/")
     return {"data":{"logged_out":True},"request_id":request.state.request_id}
