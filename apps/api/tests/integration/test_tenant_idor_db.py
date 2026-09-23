@@ -1,3 +1,8 @@
+import os
+import pytest
+
+pytestmark=pytest.mark.skipif(os.getenv("RUN_DB_INTEGRATION")!="1",reason="requires PostgreSQL integration database")
+
 import uuid
 from datetime import timedelta
 
