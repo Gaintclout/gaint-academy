@@ -3,7 +3,7 @@ from sqlalchemy import func,select
 from sqlalchemy.orm import Session
 from app.core.auth import current_user,permission_codes,has_role,linked_student_ids,scoped_student_id,teacher_section_ids
 from app.db.session import get_db
-from app.models.identity import User
+from app.models.identity import User,AuditEvent
 from app.models.academics import Student,Enrollment
 from app.models.people import Staff
 from app.models.attendance import AttendanceRecord,AttendanceSession
@@ -42,3 +42,11 @@ def summary(u:User=Depends(current_user),db:Session=Depends(get_db)):
   billed=db.scalar(select(func.coalesce(func.sum(Invoice.amount),0)).where(Invoice.tenant_id==tid))
   paid=db.scalar(select(func.coalesce(func.sum(Invoice.paid_amount),0)).where(Invoice.tenant_id==tid))
  return {"data":{"students":students,"staff":staff,"active_enrollments":enrollments,"absence_records":absent,"finance":{"billed":str(billed),"paid":str(paid),"outstanding":str(billed-paid)}}}
+
+
+@router.get("/audit-events")
+def audit_events(limit:int=100,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ if "audit.event.view" not in permission_codes(db,u):raise HTTPException(403,"Permission denied")
+ limit=max(1,min(limit,200))
+ rows=db.scalars(select(AuditEvent).where(AuditEvent.tenant_id==u.tenant_id).order_by(AuditEvent.created_at.desc()).limit(limit)).all()
+ return {"data":[{"id":str(x.id),"action":x.action,"resource_type":x.resource_type,"resource_id":x.resource_id,"user_id":None if not x.user_id else str(x.user_id),"request_id":x.request_id,"created_at":x.created_at.isoformat()} for x in rows]}
