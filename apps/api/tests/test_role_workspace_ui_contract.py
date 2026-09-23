@@ -6,7 +6,7 @@ def test_role_workspaces_gate_write_controls_by_permissions():
  cases={
   "app/attendance/page.tsx":["attendance.session.create","canCreate"],
   "app/learning/page.tsx":["learning.course.manage","canCourse"],
-  "app/finance/page.tsx":["finance.plan.manage","canManage"],
+  "app/finance/page.tsx":["finance.plan.manage","canPlan"],
   "app/communication/page.tsx":["communication.notice.manage","canManage"],
  }
  for path,phrases in cases.items():

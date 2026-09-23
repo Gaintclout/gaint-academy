@@ -26,6 +26,12 @@ def notices(u:User=Depends(current_user),db:Session=Depends(get_db)):
  if roles&{"INSTITUTION_ADMIN","PRINCIPAL","GAINT_SUPER_ADMIN","CAMPUS_ADMIN"}:audiences=ALLOWED_AUDIENCES
  if "TEACHER" in roles:audiences.add("STAFF")
  rows=db.scalars(select(Notice).where(Notice.tenant_id==u.tenant_id,Notice.status=="PUBLISHED",Notice.audience.in_(audiences)).order_by(Notice.published_at.desc())).all();return {"data":[{"id":str(x.id),"title":x.title,"body":x.body,"audience":x.audience,"published_at":x.published_at} for x in rows]}
+@router.get("/notices/drafts")
+def notice_drafts(u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"communication.notice.manage")
+ rows=db.scalars(select(Notice).where(Notice.tenant_id==u.tenant_id,Notice.status=="DRAFT").order_by(Notice.id.desc())).all()
+ return {"data":[{"id":str(x.id),"title":x.title,"body":x.body,"audience":x.audience,"status":x.status} for x in rows]}
+
 @router.post("/notices/{notice_id}/publish")
 def publish(notice_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_db)):
  req(db,u,"communication.notice.publish");x=db.scalar(select(Notice).where(Notice.id==notice_id,Notice.tenant_id==u.tenant_id))

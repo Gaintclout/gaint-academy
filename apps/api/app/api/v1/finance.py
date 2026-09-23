@@ -22,6 +22,12 @@ def plan(p:FeePlanIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
 def plans(u:User=Depends(current_user),db:Session=Depends(get_db)):
  req(db,u,"finance.plan.view")
  rows=db.scalars(select(FeePlan).where(FeePlan.tenant_id==u.tenant_id)).all();return {"data":[{"id":str(x.id),"name":x.name,"amount":str(x.amount),"status":x.status} for x in rows]}
+@router.get("/billable-students")
+def billable_students(u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"finance.invoice.create")
+ rows=db.scalars(select(Student).where(Student.tenant_id==u.tenant_id,Student.status=="ACTIVE").order_by(Student.first_name,Student.last_name)).all()
+ return {"data":[{"id":str(x.id),"admission_no":x.admission_no,"name":(x.first_name+" "+(x.last_name or "")).strip()} for x in rows]}
+
 @router.get("/invoices")
 def invoices(u:User=Depends(current_user),db:Session=Depends(get_db)):
  req(db,u,"finance.plan.view")
@@ -63,6 +69,7 @@ def create_payment_order(p:PaymentOrderIn,u:User=Depends(current_user),db:Sessio
  if existing:return {"data":{"id":str(existing.id),"status":existing.status,"provider_order_id":existing.provider_order_id,"idempotent_replay":True}}
  inv=db.scalar(select(Invoice).where(Invoice.id==p.invoice_id,Invoice.tenant_id==u.tenant_id))
  if not inv:raise HTTPException(404,"Invoice not found")
+ require_linked_student(db,u,inv.student_id);require_self_student(db,u,inv.student_id)
  due=inv.amount-inv.paid_amount
  if due<=0:raise HTTPException(409,"Invoice has no outstanding balance")
  x=PaymentOrder(tenant_id=u.tenant_id,invoice_id=inv.id,provider=p.provider,provider_order_id=p.provider_order_id,idempotency_key=p.idempotency_key,amount=due,status="CREATED")
