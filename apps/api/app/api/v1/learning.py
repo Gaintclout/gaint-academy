@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import current_user,permission_codes,has_role,linked_student_ids,require_linked_student,teacher_section_ids,require_teacher_section,student_section_ids,require_self_student
 from app.db.session import get_db
 from app.models.identity import User,AuditEvent
-from app.models.academics import Section,Enrollment
+from app.models.academics import Section,Enrollment,Student
 from app.models.learning import Course,Assignment,Assessment,AssessmentMark,Submission
 router=APIRouter(tags=["learning"])
 def req(db,u,p):
@@ -84,3 +84,81 @@ def publish(assessment_id:UUID,u:User=Depends(current_user),db:Session=Depends(g
  require_teacher_section(db,u,course.section_id)
  if a.status!="DRAFT":raise HTTPException(409,"Assessment is not in DRAFT state")
  a.status="PUBLISHED";db.query(AssessmentMark).filter(AssessmentMark.tenant_id==u.tenant_id,AssessmentMark.assessment_id==a.id).update({"status":"PUBLISHED"});db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="assessment.published",resource_type="assessment",resource_id=str(a.id)));db.commit();return {"data":{"id":str(a.id),"status":a.status}}
+
+
+def _visible_course_ids(db:Session,u:User):
+ q=select(Course.id).where(Course.tenant_id==u.tenant_id)
+ if has_role(db,u,"TEACHER"):
+  sections=teacher_section_ids(db,u)
+  if not sections:return set()
+  q=q.where(Course.section_id.in_(sections))
+ if has_role(db,u,"STUDENT"):
+  sections=student_section_ids(db,u)
+  if not sections:return set()
+  q=q.where(Course.section_id.in_(sections))
+ if has_role(db,u,"PARENT"):
+  ids=linked_student_ids(db,u)
+  if not ids:return set()
+  section_ids=select(Enrollment.section_id).where(Enrollment.tenant_id==u.tenant_id,Enrollment.student_id.in_(ids),Enrollment.status=="ACTIVE")
+  q=q.where(Course.section_id.in_(section_ids))
+ return set(db.scalars(q).all())
+
+@router.get("/assignments")
+def assignments(course_id:UUID|None=None,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"learning.course.view")
+ visible=_visible_course_ids(db,u)
+ if not visible:return {"data":[]}
+ q=select(Assignment).where(Assignment.tenant_id==u.tenant_id,Assignment.course_id.in_(visible))
+ if course_id:q=q.where(Assignment.course_id==course_id)
+ if has_role(db,u,"STUDENT") or has_role(db,u,"PARENT"):q=q.where(Assignment.status=="PUBLISHED")
+ rows=db.scalars(q.order_by(Assignment.created_at.desc())).all()
+ return {"data":[{"id":str(x.id),"course_id":str(x.course_id),"title":x.title,"instructions":x.instructions,"max_marks":x.max_marks,"due_at":None if not x.due_at else x.due_at.isoformat(),"status":x.status} for x in rows]}
+
+@router.post("/assignments/{assignment_id}/publish")
+def publish_assignment(assignment_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"learning.assignment.manage")
+ a=db.scalar(select(Assignment).where(Assignment.id==assignment_id,Assignment.tenant_id==u.tenant_id))
+ if not a:raise HTTPException(404,"Assignment not found")
+ course=db.scalar(select(Course).where(Course.id==a.course_id,Course.tenant_id==u.tenant_id))
+ if not course:raise HTTPException(404,"Course not found")
+ require_teacher_section(db,u,course.section_id)
+ if a.status!="DRAFT":raise HTTPException(409,"Assignment is not in DRAFT state")
+ a.status="PUBLISHED";db.add(AuditEvent(tenant_id=u.tenant_id,user_id=u.id,action="assignment.published",resource_type="assignment",resource_id=str(a.id)));db.commit()
+ return {"data":{"id":str(a.id),"status":a.status}}
+
+@router.get("/assessments")
+def assessments(course_id:UUID|None=None,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"learning.course.view")
+ visible=_visible_course_ids(db,u)
+ if not visible:return {"data":[]}
+ q=select(Assessment).where(Assessment.tenant_id==u.tenant_id,Assessment.course_id.in_(visible))
+ if course_id:q=q.where(Assessment.course_id==course_id)
+ if has_role(db,u,"STUDENT") or has_role(db,u,"PARENT"):q=q.where(Assessment.status=="PUBLISHED")
+ rows=db.scalars(q).all()
+ return {"data":[{"id":str(x.id),"course_id":str(x.course_id),"name":x.name,"max_marks":x.max_marks,"status":x.status} for x in rows]}
+
+@router.get("/courses/{course_id}/roster")
+def course_roster(course_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"assessment.marks.manage")
+ course=db.scalar(select(Course).where(Course.id==course_id,Course.tenant_id==u.tenant_id))
+ if not course:raise HTTPException(404,"Course not found")
+ require_teacher_section(db,u,course.section_id)
+ rows=db.execute(select(Student,Enrollment).join(Enrollment,Enrollment.student_id==Student.id).where(Enrollment.tenant_id==u.tenant_id,Enrollment.section_id==course.section_id,Enrollment.status=="ACTIVE",Student.tenant_id==u.tenant_id,Student.status=="ACTIVE").order_by(Student.first_name,Student.last_name)).all()
+ return {"data":[{"student_id":str(student.id),"admission_no":student.admission_no,"name":(student.first_name+" "+(student.last_name or "")).strip()} for student,enrollment in rows]}
+
+@router.get("/assessment-results")
+def assessment_results(u:User=Depends(current_user),db:Session=Depends(get_db)):
+ req(db,u,"learning.course.view")
+ visible=_visible_course_ids(db,u)
+ if not visible:return {"data":[]}
+ q=select(AssessmentMark,Assessment).join(Assessment,Assessment.id==AssessmentMark.assessment_id).where(AssessmentMark.tenant_id==u.tenant_id,Assessment.tenant_id==u.tenant_id,Assessment.course_id.in_(visible),Assessment.status=="PUBLISHED",AssessmentMark.status=="PUBLISHED")
+ if has_role(db,u,"STUDENT"):
+  own=scoped_student_id(db,u)
+  if not own:return {"data":[]}
+  q=q.where(AssessmentMark.student_id==own)
+ if has_role(db,u,"PARENT"):
+  ids=linked_student_ids(db,u)
+  if not ids:return {"data":[]}
+  q=q.where(AssessmentMark.student_id.in_(ids))
+ rows=db.execute(q).all()
+ return {"data":[{"assessment_id":str(a.id),"assessment_name":a.name,"student_id":str(mark.student_id),"marks":mark.marks,"max_marks":a.max_marks} for mark,a in rows]}
