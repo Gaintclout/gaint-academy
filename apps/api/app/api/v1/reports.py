@@ -38,7 +38,7 @@ def summary(u:User=Depends(current_user),db:Session=Depends(get_db)):
   students=db.scalar(select(func.count()).select_from(Student).where(Student.tenant_id==tid)) or 0
   staff=db.scalar(select(func.count()).select_from(Staff).where(Staff.tenant_id==tid)) or 0
   enrollments=db.scalar(select(func.count()).select_from(Enrollment).where(Enrollment.tenant_id==tid,Enrollment.status=="ACTIVE")) or 0
-  absent=db.scalar(select(func.count()).select_from(AttendanceRecord).where(AttendanceRecord.tenant_id==tid,AttendanceRecord.status=="ABSENT")) or 0
+  absent=db.scalar(select(func.count()).select_from(AttendanceRecord).join(AttendanceSession,AttendanceSession.id==AttendanceRecord.session_id).where(AttendanceRecord.tenant_id==tid,AttendanceRecord.status=="ABSENT",AttendanceSession.tenant_id==tid,AttendanceSession.status=="SUBMITTED")) or 0
   billed=db.scalar(select(func.coalesce(func.sum(Invoice.amount),0)).where(Invoice.tenant_id==tid))
   paid=db.scalar(select(func.coalesce(func.sum(Invoice.paid_amount),0)).where(Invoice.tenant_id==tid))
  return {"data":{"students":students,"staff":staff,"active_enrollments":enrollments,"absence_records":absent,"finance":{"billed":str(billed),"paid":str(paid),"outstanding":str(billed-paid)}}}

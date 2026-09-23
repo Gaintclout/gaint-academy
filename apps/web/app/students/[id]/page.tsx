@@ -14,8 +14,10 @@ export default function Student360(){
 
  async function load(){
   try{
-   const [student,gs,ys,user]=await Promise.all([apiFetch("/students/"+id),apiFetch("/students/"+id+"/guardians"),apiFetch("/academics/years"),apiFetch("/auth/me")]);
-   setS(student.data);setGuardians(gs.data);setYears(ys.data);setMe(user.data)
+   const user=(await apiFetch("/auth/me")).data;setMe(user);
+   const [student,gs]=await Promise.all([apiFetch("/students/"+id),apiFetch("/students/"+id+"/guardians")]);
+   setS(student.data);setGuardians(gs.data);
+   if(user.permissions.includes("academics.setup.admin"))setYears((await apiFetch("/academics/years")).data);else setYears([]);
   }catch(e){if(isAuthError(e))router.replace("/login");else setError(e instanceof Error?e.message:"Unable to load Student 360")}
  }
  useEffect(()=>{load()},[id]);

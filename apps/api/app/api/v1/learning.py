@@ -72,6 +72,7 @@ class SubmissionIn(BaseModel):student_id:UUID;content:str
 def submit_assignment(assignment_id:UUID,p:SubmissionIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
  req(db,u,"learning.submission.create");require_linked_student(db,u,p.student_id);require_self_student(db,u,p.student_id);a=db.scalar(select(Assignment).where(Assignment.id==assignment_id,Assignment.tenant_id==u.tenant_id));c=None if not a else db.scalar(select(Course).where(Course.id==a.course_id,Course.tenant_id==u.tenant_id))
  if not a or not c:raise HTTPException(404,"Assignment not found")
+ if a.status!="PUBLISHED":raise HTTPException(409,"Assignment is not open for submission")
  enrolled=db.scalar(select(Enrollment).where(Enrollment.tenant_id==u.tenant_id,Enrollment.section_id==c.section_id,Enrollment.student_id==p.student_id,Enrollment.status=="ACTIVE"))
  if not enrolled:raise HTTPException(422,"Student is not actively enrolled in the course section")
  x=Submission(tenant_id=u.tenant_id,assignment_id=a.id,student_id=p.student_id,content=p.content);db.add(x);db.commit();db.refresh(x);return {"data":{"id":str(x.id),"status":x.status}}

@@ -66,7 +66,9 @@ class PaymentOrderIn(BaseModel):
 def create_payment_order(p:PaymentOrderIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
  req(db,u,"finance.payment.initiate")
  existing=db.scalar(select(PaymentOrder).where(PaymentOrder.tenant_id==u.tenant_id,PaymentOrder.idempotency_key==p.idempotency_key))
- if existing:return {"data":{"id":str(existing.id),"status":existing.status,"provider_order_id":existing.provider_order_id,"idempotent_replay":True}}
+ if existing:
+  if existing.invoice_id!=p.invoice_id or existing.provider!=p.provider or existing.provider_order_id!=p.provider_order_id:raise HTTPException(409,"Idempotency key was already used for a different payment order")
+  return {"data":{"id":str(existing.id),"status":existing.status,"provider_order_id":existing.provider_order_id,"idempotent_replay":True}}
  inv=db.scalar(select(Invoice).where(Invoice.id==p.invoice_id,Invoice.tenant_id==u.tenant_id))
  if not inv:raise HTTPException(404,"Invoice not found")
  require_linked_student(db,u,inv.student_id);require_self_student(db,u,inv.student_id)
