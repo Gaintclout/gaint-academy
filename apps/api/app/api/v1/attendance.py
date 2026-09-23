@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import current_user,permission_codes,has_role,teacher_section_ids,require_teacher_section,linked_student_ids,scoped_student_id
 from app.db.session import get_db
 from app.models.identity import User,AuditEvent
-from app.models.academics import Section,Enrollment,Student
+from app.models.academics import AcademicYear,AcademicClass,Section,Enrollment,Student
 from app.models.attendance import TimetableSlot,AttendanceSession,AttendanceRecord
 from app.models.people import Guardian,StudentGuardian
 from app.models.communication import Notification
@@ -44,6 +44,25 @@ def attendance_records(student_id:UUID|None=None,u:User=Depends(current_user),db
   q=q.where(AttendanceRecord.student_id.in_(ids))
  rows=db.execute(q.order_by(AttendanceSession.attendance_date.desc())).all()
  return {"data":[{"student_id":str(r.student_id),"attendance_date":str(s.attendance_date),"status":r.status,"remark":r.remark} for r,s in rows]}
+
+@router.get("/attendance/sections")
+def attendance_sections(u:User=Depends(current_user),db:Session=Depends(get_db)):
+ require(db,u,"attendance.session.create")
+ q=select(Section,AcademicClass,AcademicYear).join(AcademicClass,AcademicClass.id==Section.class_id).join(AcademicYear,AcademicYear.id==AcademicClass.academic_year_id).where(Section.tenant_id==u.tenant_id,AcademicClass.tenant_id==u.tenant_id,AcademicYear.tenant_id==u.tenant_id)
+ if has_role(db,u,"TEACHER"):
+  ids=teacher_section_ids(db,u)
+  if not ids:return {"data":[]}
+  q=q.where(Section.id.in_(ids))
+ rows=db.execute(q.order_by(AcademicYear.name,AcademicClass.name,Section.name)).all()
+ return {"data":[{"id":str(sec.id),"section_name":sec.name,"class_name":cls.name,"academic_year":year.name,"label":f"{year.name} · {cls.name} · {sec.name}"} for sec,cls,year in rows]}
+
+@router.get("/attendance/roster")
+def attendance_roster(section_id:UUID,u:User=Depends(current_user),db:Session=Depends(get_db)):
+ require(db,u,"attendance.record.mark");require_teacher_section(db,u,section_id)
+ sec=db.scalar(select(Section).where(Section.id==section_id,Section.tenant_id==u.tenant_id))
+ if not sec:raise HTTPException(404,"Section not found")
+ rows=db.execute(select(Student,Enrollment).join(Enrollment,Enrollment.student_id==Student.id).where(Enrollment.tenant_id==u.tenant_id,Enrollment.section_id==section_id,Enrollment.status=="ACTIVE",Student.tenant_id==u.tenant_id,Student.status=="ACTIVE").order_by(Student.first_name,Student.last_name)).all()
+ return {"data":[{"student_id":str(student.id),"admission_no":student.admission_no,"name":(student.first_name+" "+(student.last_name or "")).strip()} for student,enrollment in rows]}
 
 class AttendanceIn(BaseModel): section_id:UUID;attendance_date:date
 @router.post("/attendance/sessions",status_code=201)
