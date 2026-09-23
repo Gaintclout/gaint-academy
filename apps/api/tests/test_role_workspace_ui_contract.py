@@ -5,7 +5,7 @@ def read_web(p):return (ROOT.parent/"web"/p).read_text(encoding="utf-8")
 def test_role_workspaces_gate_write_controls_by_permissions():
  cases={
   "app/attendance/page.tsx":["attendance.session.create","canCreate"],
-  "app/learning/page.tsx":["learning.course.manage","canManage"],
+  "app/learning/page.tsx":["learning.course.manage","canCourse"],
   "app/finance/page.tsx":["finance.plan.manage","canManage"],
   "app/communication/page.tsx":["communication.notice.manage","canManage"],
  }
