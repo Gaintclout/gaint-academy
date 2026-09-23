@@ -51,6 +51,8 @@ def enroll(student_id:UUID,p:EnrollIn,user:User=Depends(current_user),db:Session
     cls=db.scalar(select(AcademicClass).where(AcademicClass.id==p.class_id,AcademicClass.tenant_id==user.tenant_id,AcademicClass.academic_year_id==p.academic_year_id))
     sec=db.scalar(select(Section).where(Section.id==p.section_id,Section.tenant_id==user.tenant_id,Section.class_id==p.class_id))
     if not all([student,year,cls,sec]): raise HTTPException(404,"Enrollment resource not found")
+    existing=db.scalar(select(Enrollment).where(Enrollment.tenant_id==user.tenant_id,Enrollment.student_id==student_id,Enrollment.academic_year_id==p.academic_year_id))
+    if existing: raise HTTPException(409,"Student already has an enrollment for this academic year")
     x=Enrollment(tenant_id=user.tenant_id,student_id=student_id,**p.model_dump()); db.add(x); db.commit(); db.refresh(x); return {"data":{"id":str(x.id),"status":x.status}}
 
 class StudentAccountIn(BaseModel):
