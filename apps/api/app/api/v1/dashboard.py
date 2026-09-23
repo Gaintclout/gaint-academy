@@ -73,6 +73,13 @@ def summary(request:Request,user:User=Depends(current_user),db:Session=Depends(g
             {"label":"Role","value":"HR / STAFF","href":None},
         ]
         heading="People workspace"; description="Staff and workforce administration."
+    elif "CAMPUS_ADMIN" in roles:
+        metrics=[
+            {"label":"Campus operations","value":"Active","href":"/campus"},
+            {"label":"Integrations","value":"Manage","href":"/campus"},
+            {"label":"Role","value":"CAMPUS ADMIN","href":None},
+        ]
+        heading="Campus operations workspace"; description="Operational services, integrations, grievances and assets."
     elif "AUDITOR" in roles:
         metrics=[
             {"label":"Audit mode","value":"READ ONLY","href":"/reports"},
