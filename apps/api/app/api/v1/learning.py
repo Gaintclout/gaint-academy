@@ -21,7 +21,13 @@ def course(p:CourseIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
 @router.get("/courses")
 def courses(u:User=Depends(current_user),db:Session=Depends(get_db)):
  req(db,u,"learning.course.view")
- q=select(Course).where(Course.tenant_id==u.tenant_id)\n if has_role(db,u,"PARENT"):\n  ids=linked_student_ids(db,u)\n  if not ids:return {"data":[]}\n  section_ids=select(Enrollment.section_id).where(Enrollment.tenant_id==u.tenant_id,Enrollment.student_id.in_(ids),Enrollment.status=="ACTIVE")\n  q=q.where(Course.section_id.in_(section_ids))\n rows=db.scalars(q).all();return {"data":[{"id":str(x.id),"name":x.name,"section_id":str(x.section_id),"status":x.status} for x in rows]}
+ q=select(Course).where(Course.tenant_id==u.tenant_id)
+ if has_role(db,u,"PARENT"):
+  ids=linked_student_ids(db,u)
+  if not ids:return {"data":[]}
+  section_ids=select(Enrollment.section_id).where(Enrollment.tenant_id==u.tenant_id,Enrollment.student_id.in_(ids),Enrollment.status=="ACTIVE")
+  q=q.where(Course.section_id.in_(section_ids))
+ rows=db.scalars(q).all();return {"data":[{"id":str(x.id),"name":x.name,"section_id":str(x.section_id),"status":x.status} for x in rows]}
 class AssignmentIn(BaseModel):course_id:UUID;title:str;instructions:str|None=None;max_marks:int=100;due_at:datetime|None=None
 @router.post("/assignments",status_code=201)
 def assignment(p:AssignmentIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
