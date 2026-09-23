@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-from app.core.auth import current_user, permission_codes, role_codes, scoped_student_id
+from app.core.auth import current_user, permission_codes, role_codes, scoped_student_id, teacher_section_ids
 from app.db.session import get_db
 from app.models.identity import User
 from app.models.academics import Student
@@ -39,6 +39,35 @@ def summary(request:Request,user:User=Depends(current_user),db:Session=Depends(g
             {"label":"Role","value":"PARENT / GUARDIAN","href":None},
         ]
         heading="Your family overview"; description="A summary of your linked students and current academy activity."
+    elif "TEACHER" in roles:
+        sections=teacher_section_ids(db,user)
+        attendance_count=0 if not sections else count(db,AttendanceSession,user.tenant_id,AttendanceSession.section_id.in_(sections))
+        metrics=[
+            {"label":"Assigned sections","value":len(sections),"href":"/learning"},
+            {"label":"Attendance sessions","value":attendance_count,"href":"/attendance"},
+            {"label":"Learning workspace","value":"Courses & assessments","href":"/learning"},
+            {"label":"Role","value":"TEACHER","href":None},
+        ]
+        heading="Your teaching workspace"; description="Assigned classes, attendance and learning activity."
+    elif "ACCOUNTS" in roles:
+        metrics=[
+            {"label":"Open invoices","value":count(db,Invoice,user.tenant_id,Invoice.status!="PAID"),"href":"/finance"},
+            {"label":"Finance workspace","value":"Billing & payments","href":"/finance"},
+            {"label":"Role","value":"ACCOUNTS","href":None},
+        ]
+        heading="Finance workspace"; description="Fee, invoice and payment operations for your institution."
+    elif "HR" in roles:
+        metrics=[
+            {"label":"Active staff","value":count(db,Staff,user.tenant_id,Staff.status=="ACTIVE"),"href":"/staff"},
+            {"label":"Role","value":"HR / STAFF","href":None},
+        ]
+        heading="People workspace"; description="Staff and workforce administration."
+    elif "AUDITOR" in roles:
+        metrics=[
+            {"label":"Audit mode","value":"READ ONLY","href":"/reports"},
+            {"label":"Role","value":"AUDITOR","href":None},
+        ]
+        heading="Audit workspace"; description="Read-only institutional reporting and audit visibility."
     else:
         metrics=[
             {"label":"Active students","value":count(db,Student,user.tenant_id,Student.status=="ACTIVE"),"href":"/students"},
